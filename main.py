@@ -1,67 +1,32 @@
 import os
-import random
-import pymongo
+
+from fastapi import FastAPI
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
-from pydantic import BaseModel, Field
-
-
-class RecipeResponse(BaseModel):
-    id: int
-    name: str
-    ingredients: list
-    instructions: list
-    prepTimeMinutes: int
-    cookTimeMinutes: int
-    servings: int
-    difficulty: str
-    cuisine: str
-    caloriesPerServing: int
-    image: str
-    rating: float
-    reviewCount: int
-
-
-class RecipeCreate(BaseModel):
-    name: str = Field(..., min_length=1)
-    ingredients: list
-    instructions: list
-    prepTimeMinutes: int = Field(ge=1)
-    cookTimeMinutes: int = Field(ge=1)
-    servings: int = Field(ge=1)
-    difficulty: str = Field(..., min_length=1)
-    cuisine: str = Field(..., min_length=1)
-    caloriesPerServing: int = Field(ge=1)
-    image: str = Field(..., min_length=1)
-    rating: float = Field(ge=0)
-    reviewCount: int = Field(ge=1)
+from app.endpoints import recipes_router
+from fastapi.middleware.cors import CORSMiddleware
 
 
 load_dotenv()
 
+
 app = FastAPI()
-client = pymongo.MongoClient(
-    f"mongodb://{os.getenv('MONGO_DB_USERNAME')}:{os.getenv('MONGO_DB_PASSWORD')}@localhost:27017/?authSource=admin",
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=allowed_origins != ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
-@app.get("/")
-async def get_recipes(
-    limit: int = Query(default=8, ge=1, le=100),
-    skip: int = Query(default=0, ge=0),
-) -> list:
-    cursor = client["recipes"]["recipesCollection"].find().skip(skip).limit(limit)
-    result = [RecipeResponse(**doc) for doc in cursor]
-    result.append({"total": len(result), "limit": limit, "skip": skip})
-    return result
+app.include_router(recipes_router, prefix="/recipes", tags=["Recipes"])
 
 
-@app.post("/", status_code=201)
-def create_recipe(recipe: RecipeCreate):
-    recipe_dict = recipe.model_dump()
-    recipe_dict["id"] = random.randint(1, 100000)
-    result = client["recipes"]["recipesCollection"].insert_one(recipe_dict)
-    return {
-        "message": "recipe created successfully",
-        "inserted_id": str(result.inserted_id),
-    }
+@app.get("/", status_code=200)
+def root():
+    return {"status": "ok"}
