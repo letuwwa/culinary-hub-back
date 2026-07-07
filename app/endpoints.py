@@ -46,3 +46,17 @@ async def delete_recipe(recipe_id: int):
         await recipe.delete()
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+
+@recipes_router.put("/{recipe_id}", status_code=200, response_model=RecipeResponse)
+async def update_recipe(recipe_id: int, payload: dict):
+    recipe = await find_recipe_by_public_id(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    try:
+        for key, value in payload.items():
+            setattr(recipe, key, value)
+        await recipe.save()
+        return to_recipe_response(recipe)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
