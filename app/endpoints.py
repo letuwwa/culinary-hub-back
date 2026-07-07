@@ -1,43 +1,27 @@
-import os
 from random import randrange
-from urllib.parse import quote_plus
-
-import pymongo
 from fastapi import APIRouter, HTTPException, Query
 from pymongo.errors import PyMongoError
 
+from app.models import Recipe
 from app.schemas import RecipeCreate, RecipeListResponse, RecipeResponse
 
 
 recipes_router = APIRouter()
 
 
-def get_mongo_uri() -> str:
-    if mongo_uri := os.getenv("MONGO_DB_URI"):
-        return mongo_uri
-
-    username = os.getenv("MONGO_DB_USERNAME")
-    password = os.getenv("MONGO_DB_PASSWORD")
-    host = os.getenv("MONGO_DB_HOST", "localhost")
-    port = os.getenv("MONGO_DB_PORT", "27017")
-
-    if username and password:
-        return (
-            f"mongodb://{quote_plus(username)}:{quote_plus(password)}"
-            f"@{host}:{port}/?authSource=admin"
-        )
-
-    return f"mongodb://{host}:{port}/"
+def to_recipe_response(recipe: Recipe) -> RecipeResponse:
+    recipe_dict = recipe.model_dump()
+    recipe_dict["id"] = recipe.recipe_id or int(str(recipe.id)[-8:], 16)
+    return RecipeResponse.model_validate(recipe_dict)
 
 
-client = pymongo.MongoClient(get_mongo_uri(), serverSelectionTimeoutMS=5000)
-recipes_collection = client["recipes"]["recipesCollection"]
-
-
-def generate_recipe_id() -> int:
+async def generate_recipe_id() -> int:
     for _ in range(10):
         recipe_id = randrange(1, 1_000_001)
-        if recipes_collection.count_documents({"id": recipe_id}, limit=1) == 0:
+        existing_recipe = await Recipe.find_one(
+            {"$or": [{"recipe_id": recipe_id}, {"id": recipe_id}]}
+        )
+        if existing_recipe is None:
             return recipe_id
 
     raise HTTPException(status_code=503, detail="Could not allocate a recipe id")
@@ -49,9 +33,9 @@ async def get_recipes(
     skip: int = Query(default=0, ge=0),
 ) -> RecipeListResponse:
     try:
-        cursor = recipes_collection.find({}, {"_id": 0}).skip(skip).limit(limit)
-        recipes = [RecipeResponse(**doc) for doc in cursor]
-        total = recipes_collection.count_documents({})
+        recipe_documents = await Recipe.find_all(skip=skip, limit=limit).to_list()
+        recipes = [to_recipe_response(recipe) for recipe in recipe_documents]
+        total = await Recipe.count()
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
@@ -59,12 +43,13 @@ async def get_recipes(
 
 
 @recipes_router.post("/", status_code=201, response_model=RecipeResponse)
-def create_recipe(recipe: RecipeCreate) -> RecipeResponse:
+async def create_recipe(recipe: RecipeCreate) -> RecipeResponse:
     recipe_dict = recipe.model_dump()
     try:
-        recipe_dict["id"] = generate_recipe_id()
-        recipes_collection.insert_one(recipe_dict)
+        recipe_dict["recipe_id"] = await generate_recipe_id()
+        recipe_document = Recipe.model_validate(recipe_dict)
+        await recipe_document.insert()
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
-    return RecipeResponse(**recipe_dict)
+    return to_recipe_response(recipe_document)
