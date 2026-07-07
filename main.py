@@ -1,11 +1,10 @@
 import os
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from app.endpoints import recipes_router
-from app.database import init_database
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
+
+from app import init_database, recipes_router
 
 
 load_dotenv()
