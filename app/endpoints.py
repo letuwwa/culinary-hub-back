@@ -1,3 +1,5 @@
+import re
+
 from pymongo.errors import PyMongoError
 from fastapi import APIRouter, HTTPException, Query
 
@@ -18,6 +20,25 @@ async def get_recipes(
         recipe_documents = await Recipe.find_all(skip=skip, limit=limit).to_list()
         recipes = [to_recipe_response(recipe) for recipe in recipe_documents]
         total = await Recipe.count()
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+    return RecipeListResponse(recipes=recipes, total=total, limit=limit, skip=skip)
+
+
+@recipes_router.get("/search")
+async def search_recipes(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(default=8, ge=1, le=100),
+    skip: int = Query(default=0, ge=0),
+) -> RecipeListResponse:
+    search_filter = {"name": {"$regex": re.escape(q), "$options": "i"}}
+
+    try:
+        recipe_query = Recipe.find(search_filter)
+        recipe_documents = await recipe_query.skip(skip).limit(limit).to_list()
+        recipes = [to_recipe_response(recipe) for recipe in recipe_documents]
+        total = await Recipe.find(search_filter).count()
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
