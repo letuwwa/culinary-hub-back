@@ -24,6 +24,17 @@ async def get_recipes(
     return RecipeListResponse(recipes=recipes, total=total, limit=limit, skip=skip)
 
 
+@recipes_router.get("/{recipe_id}", status_code=200)
+async def get_recipe(recipe_id: int) -> RecipeResponse:
+    recipe = await find_recipe_by_public_id(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    try:
+        return to_recipe_response(recipe)
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+
 @recipes_router.post("/", status_code=201, response_model=RecipeResponse)
 async def create_recipe(recipe: RecipeCreate) -> RecipeResponse:
     recipe_dict = recipe.model_dump()
