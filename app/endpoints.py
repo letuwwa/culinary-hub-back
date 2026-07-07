@@ -15,6 +15,24 @@ def to_recipe_response(recipe: Recipe) -> RecipeResponse:
     return RecipeResponse.model_validate(recipe_dict)
 
 
+async def find_recipe_by_public_id(recipe_id: int) -> Recipe | None:
+    recipe = await Recipe.find_one(
+        {"$or": [{"recipe_id": recipe_id}, {"id": recipe_id}]}
+    )
+    if recipe is not None:
+        return recipe
+
+    recipes_without_numeric_id = await Recipe.find({"recipe_id": None}).to_list()
+    return next(
+        (
+            recipe
+            for recipe in recipes_without_numeric_id
+            if int(str(recipe.id)[-8:], 16) == recipe_id
+        ),
+        None,
+    )
+
+
 async def generate_recipe_id() -> int:
     for _ in range(10):
         recipe_id = randrange(1, 1_000_001)
@@ -53,3 +71,14 @@ async def create_recipe(recipe: RecipeCreate) -> RecipeResponse:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
     return to_recipe_response(recipe_document)
+
+
+@recipes_router.delete("/{recipe_id}", status_code=204)
+async def delete_recipe(recipe_id: int):
+    recipe = await find_recipe_by_public_id(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    try:
+        await recipe.delete()
+    except PyMongoError as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
