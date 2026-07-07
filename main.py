@@ -1,5 +1,7 @@
+import os
 import random
 import pymongo
+from dotenv import load_dotenv
 from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 
@@ -35,9 +37,11 @@ class RecipeCreate(BaseModel):
     reviewCount: int = Field(ge=1)
 
 
+load_dotenv()
+
 app = FastAPI()
 client = pymongo.MongoClient(
-    f"mongodb://{'admin'}:{'password'}@localhost:27017/?authSource=admin"
+    f"mongodb://{os.getenv('MONGO_DB_USERNAME')}:{os.getenv('MONGO_DB_PASSWORD')}@localhost:27017/?authSource=admin",
 )
 
 
@@ -59,5 +63,5 @@ def create_recipe(recipe: RecipeCreate):
     result = client["recipes"]["recipesCollection"].insert_one(recipe_dict)
     return {
         "message": "recipe created successfully",
-        "inserted_id": str(result.inserted_id)
+        "inserted_id": str(result.inserted_id),
     }
