@@ -1,48 +1,12 @@
-from random import randrange
-from fastapi import APIRouter, HTTPException, Query
 from pymongo.errors import PyMongoError
+from fastapi import APIRouter, HTTPException, Query
 
 from app.models import Recipe
 from app.schemas import RecipeCreate, RecipeListResponse, RecipeResponse
+from app.utils import generate_recipe_id, find_recipe_by_public_id, to_recipe_response
 
 
 recipes_router = APIRouter()
-
-
-def to_recipe_response(recipe: Recipe) -> RecipeResponse:
-    recipe_dict = recipe.model_dump()
-    recipe_dict["id"] = recipe.recipe_id or int(str(recipe.id)[-8:], 16)
-    return RecipeResponse.model_validate(recipe_dict)
-
-
-async def find_recipe_by_public_id(recipe_id: int) -> Recipe | None:
-    recipe = await Recipe.find_one(
-        {"$or": [{"recipe_id": recipe_id}, {"id": recipe_id}]}
-    )
-    if recipe is not None:
-        return recipe
-
-    recipes_without_numeric_id = await Recipe.find({"recipe_id": None}).to_list()
-    return next(
-        (
-            recipe
-            for recipe in recipes_without_numeric_id
-            if int(str(recipe.id)[-8:], 16) == recipe_id
-        ),
-        None,
-    )
-
-
-async def generate_recipe_id() -> int:
-    for _ in range(10):
-        recipe_id = randrange(1, 1_000_001)
-        existing_recipe = await Recipe.find_one(
-            {"$or": [{"recipe_id": recipe_id}, {"id": recipe_id}]}
-        )
-        if existing_recipe is None:
-            return recipe_id
-
-    raise HTTPException(status_code=503, detail="Could not allocate a recipe id")
 
 
 @recipes_router.get("/")
