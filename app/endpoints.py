@@ -4,7 +4,7 @@ from pymongo.errors import PyMongoError
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models import Recipe
-from app.schemas import RecipeCreate, RecipeListResponse, RecipeResponse
+from app.schemas import RecipeCreate, RecipeListResponse, RecipeResponse, RecipeUpdate
 from app.utils import generate_recipe_id, find_recipe_by_public_id, to_recipe_response
 
 
@@ -47,10 +47,10 @@ async def search_recipes(
 
 @recipes_router.get("/{recipe_id}", status_code=200)
 async def get_recipe(recipe_id: int) -> RecipeResponse:
-    recipe = await find_recipe_by_public_id(recipe_id)
-    if recipe is None:
-        raise HTTPException(status_code=404, detail="Recipe not found")
     try:
+        recipe = await find_recipe_by_public_id(recipe_id)
+        if recipe is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
         return to_recipe_response(recipe)
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
@@ -71,22 +71,26 @@ async def create_recipe(recipe: RecipeCreate) -> RecipeResponse:
 
 @recipes_router.delete("/{recipe_id}", status_code=204)
 async def delete_recipe(recipe_id: int):
-    recipe = await find_recipe_by_public_id(recipe_id)
-    if recipe is None:
-        raise HTTPException(status_code=404, detail="Recipe not found")
     try:
+        recipe = await find_recipe_by_public_id(recipe_id)
+        if recipe is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
         await recipe.delete()
     except PyMongoError as exc:
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
 
 
 @recipes_router.put("/{recipe_id}", status_code=200, response_model=RecipeResponse)
-async def update_recipe(recipe_id: int, payload: dict):
-    recipe = await find_recipe_by_public_id(recipe_id)
-    if recipe is None:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+async def update_recipe(recipe_id: int, payload: RecipeUpdate) -> RecipeResponse:
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
     try:
-        for key, value in payload.items():
+        recipe = await find_recipe_by_public_id(recipe_id)
+        if recipe is None:
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        for key, value in updates.items():
             setattr(recipe, key, value)
         await recipe.save()
         return to_recipe_response(recipe)
